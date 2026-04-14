@@ -1,3 +1,9 @@
+'''
+
+Just for following the grid (given certain target grid square)
+
+'''
+
 from buildhat import Motor
 
 import time
