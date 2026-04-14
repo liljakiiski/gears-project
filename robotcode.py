@@ -56,11 +56,11 @@ def drive():
     rightDist = rightUltra.getDist
     leftDist = leftUltra.getDist
     
-    if rightDist is None and leftDist is not None:
+    if (rightDist is None or rightDist > 20) and leftDist is not None:
         print('Right out of range')
         dist = leftDist
         error = (TRACKWIDTH / 2) - dist
-    elif leftDist is None and rightDist is not None:
+    elif (leftDist is None or leftDist > 20) and rightDist is not None:
         print('Left out of range')
         dist = rightDist
         error = dist - (TRACKWIDTH / 2)
@@ -70,6 +70,7 @@ def drive():
         return
     else:
         error = rightDist - leftDist
+        print('Left sensor: ', leftUltra.getDist)
 
     correction = error * kP
     
@@ -86,16 +87,15 @@ def turnAtIntersection():
     dist = frontUltra.getDist
     
     if dist is not None:
-        if dist < TRACKWIDTH / 2:
-            if leftUltra.getDist is not None:
-                direction = 'R'
+        if dist < (TRACKWIDTH / 2) + 1:
+            if leftUltra.getDist is not None and leftUltra.getDist < 20:
+                direction = -1
                 print('TURNING RIGHT')
             else:
-                direction = 'L'
+                # print('Left sensor: ' + leftUltra.getDist)
+                direction = 1
                 print('TURNING LEFT')
-            while(dist is not None and dist < 100):
-                turn(direction, SPEED)
-                dist = frontUltra.getDist
+            turn_about_self(90 * direction)
             print('DONE TURNING')
 
 # Stop Driving
@@ -107,6 +107,23 @@ def stop():
 def forward(speed):
     motorL.start(-speed)
     motorR.start(speed)
+    
+def turn_about_self(degrees):
+    motorL.set_default_speed(15)
+    motorR.set_default_speed(15)
+    
+    WHEEL_R = 4.77 / 2 #cm?
+    BOT_R = 12.9 / 2 #cm
+
+    # the motors overshoot slightly, since two motors are running this overshooting is multiplied twice
+    # account for this overshooting by subtracting a (constant?) push value
+    push_per_degree = -34 / 180
+
+    motorDegrees = (degrees + push_per_degree * degrees) * BOT_R / WHEEL_R
+    print(motorDegrees)
+
+    motorL.run_for_degrees(motorDegrees, blocking=False)
+    motorR.run_for_degrees(motorDegrees)
 
 #Turn (L or R)
 def turn(direction, speed):
