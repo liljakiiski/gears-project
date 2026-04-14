@@ -85,7 +85,8 @@ def turnAtIntersection():
     
     if dist is not None and dist < (TRACKWIDTH / 2) + 1:
 
-        if (get_position() - trackStart) % UNITSIZE
+        # if (get_position() - trackStart) % UNITSIZE > UNITSIZE / 2:
+        # add new square
 
         if leftUltra.getDist is not None and leftUltra.getDist < 20:
             direction = -1
@@ -96,8 +97,9 @@ def turnAtIntersection():
         turn_about_self(90 * direction)
         print('DONE TURNING')
 
-    trackStart = get_position()
-    distFromTrackStart = 0
+        trackStart = get_position()
+        distFromTrackStart = 0
+        # prompt to scan for heat/magnetic sources and update map
 
 
 def turn_about_self(degrees):
