@@ -29,6 +29,7 @@ motorR = Motor('B') #Right motor
 heading = 90 # 0 is facing east, 90 is facing north, 180 is facing west, 270 is facing south
 currentPosition = GridSquare(0, 0, 5) # initialize current position as origin
 trackStart = 0 # in cm, reference for beginning of a straightaway
+unitsSinceTrackStart = 0 # in coordinate units, distance traveled since trackStart
 gridKnowledge = [] # list of GridSquare objects, represents the map of the maze as the robot knows it
 
 # CONSTANTS
@@ -78,18 +79,25 @@ def drive():
 
 
 def turnAtIntersection():
+    global trackStart
+    global distFromTrackStart
     dist = frontUltra.getDist
     
-    if dist is not None:
-        if dist < (TRACKWIDTH / 2) + 1:
-            if leftUltra.getDist is not None and leftUltra.getDist < 20:
-                direction = -1
-                print('TURNING RIGHT')
-            else:
-                direction = 1
-                print('TURNING LEFT')
-            turn_about_self(90 * direction)
-            print('DONE TURNING')
+    if dist is not None and dist < (TRACKWIDTH / 2) + 1:
+
+        if (get_position() - trackStart) % UNITSIZE
+
+        if leftUltra.getDist is not None and leftUltra.getDist < 20:
+            direction = -1
+            print('TURNING RIGHT')
+        else:
+            direction = 1
+            print('TURNING LEFT')
+        turn_about_self(90 * direction)
+        print('DONE TURNING')
+
+    trackStart = get_position()
+    distFromTrackStart = 0
 
 
 def turn_about_self(degrees):
@@ -114,7 +122,14 @@ def turn_about_self(degrees):
 # ---------- Path Mapping ----------
     
 def update_map_walls():
-    if (get_position() - trackStart) % UNITSIZE 
+    global currentPosition
+    if (get_position() - trackStart) / UNITSIZE > distFromTrackStart:
+        distFromTrackStart += 1
+        x = currentPosition.x + math.cos(math.radians(heading))
+        y = currentPosition.y + math.sin(math.radians(heading))
+        currentPosition = GridSquare(x, y, 5)
+
+        # calls to check for obstacles
 
 def get_position():
     return ((motorL.get_position() + motorR.get_position()) / 2) * (math.pi * WHEELDIAMETER) / 360
@@ -131,9 +146,9 @@ def updateSourcesFieldOriented(robotLoc, heading):
     heatSource = detectHeatSource()
 
     if(magSource != 'N'):
+        x_mag, y_mag, z_mag = imu.getMag()
         magSquare = getRobotOrientedLoc(robotLoc, heading, magSource)
-        magSquare.type = 3
-        gridKnowledge.append(magSquare)
+        gridKnowledge.append(magSquare)        
 
     if(heatSource != 'N'):
         heatSquare = getRobotOrientedLoc(robotLoc, heading, heatSource)
