@@ -85,8 +85,7 @@ def turnAtIntersection():
     
     if dist is not None and dist < (TRACKWIDTH / 2) + 1:
 
-        # if (get_position() - trackStart) % UNITSIZE > UNITSIZE / 2:
-        # add new square
+        countAsNewSqure = (get_position() - trackStart) % UNITSIZE > UNITSIZE / 2
 
         if leftUltra.getDist is not None and leftUltra.getDist < 20:
             direction = -1
@@ -97,9 +96,10 @@ def turnAtIntersection():
         turn_about_self(90 * direction)
         print('DONE TURNING')
 
-        trackStart = get_position()
-        distFromTrackStart = 0
-        # prompt to scan for heat/magnetic sources and update map
+    if countAsNewSqure:
+        update_map_walls()
+    trackStart = get_position()
+    distFromTrackStart = 0
 
 
 def turn_about_self(degrees):
@@ -122,16 +122,21 @@ def turn_about_self(degrees):
     motorR.run_for_degrees(motorDegrees)
 
 # ---------- Path Mapping ----------
-    
-def update_map_walls():
+
+def check_new_square():
     global currentPosition
     if (get_position() - trackStart) / UNITSIZE > distFromTrackStart:
-        distFromTrackStart += 1
-        x = currentPosition.x + math.cos(math.radians(heading))
-        y = currentPosition.y + math.sin(math.radians(heading))
-        currentPosition = GridSquare(x, y, 5)
+        update_map_walls()
+    
+def update_map_walls():
+    distFromTrackStart += 1
+    currentPosition.x = currentPosition.x + math.cos(math.radians(heading))
+    currentPosition.y = currentPosition.y + math.sin(math.radians(heading))
+    currentPosition.type = 1
+    gridKnowledge.append(currentPosition)
 
-        # calls to check for obstacles
+    # calls to check for obstacles
+    updateSourcesFieldOriented(currentPosition, heading)
 
 def get_position():
     return ((motorL.get_position() + motorR.get_position()) / 2) * (math.pi * WHEELDIAMETER) / 360
@@ -141,7 +146,7 @@ def get_position():
 '''
 Passed in:
 > robotLoc : an object of GridSquare
-> heading: 90/180/270
+> heading: 0/90/180/270
 '''
 def updateSourcesFieldOriented(robotLoc, heading):
     magSource = detectMagSource()
@@ -256,6 +261,7 @@ try:
     while True:
         drive()
         turnAtIntersection()
+        check_new_square()
         time.sleep(0.1)
 except KeyboardInterrupt:
     motorL.stop()
