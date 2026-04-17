@@ -8,7 +8,7 @@ from buildhat import Motor
 from basehat import IMUSensor
 from basehat import IRSensor
 from basehat import UltrasonicSensor
-import GridSquare
+from GridSquare import GridSquare
 
 import time
 import math
@@ -29,7 +29,7 @@ motorR = Motor('B') #Right motor
 heading = 90 # 0 is facing east, 90 is facing north, 180 is facing west, 270 is facing south
 currentPosition = GridSquare(0, 0, 5) # initialize current position as origin
 trackStart = 0 # in cm, reference for beginning of a straightaway
-unitsSinceTrackStart = 0 # in coordinate units, distance traveled since trackStart
+unitsFromTrackStart = 0 # in coordinate units, distance traveled since trackStart
 gridKnowledge = [] # list of GridSquare objects, represents the map of the maze as the robot knows it
 
 # CONSTANTS
@@ -37,7 +37,7 @@ TARGETDIST = 0 #in cm, dist from the
 KP = 0.6
 SPEED = 20
 TRACKWIDTH = 20 #in cm, distance between walls, minus width of robot
-UNITSIZE = 33 #in cm, size of one square in the grid
+UNITSIZE = 30 #in cm, size of one square in the grid
 WHEELDIAMETER = 4.7 # in cm, diameter of wheel
 
 # ---------- Calibration ----------
@@ -53,18 +53,21 @@ def drive():
     rightDist = rightUltra.getDist
     leftDist = leftUltra.getDist
     
-    if (rightDist is None or rightDist > 20) and leftDist is not None:
+    if (rightDist is None or rightDist > 20) and (leftDist is not None and leftDist < 20):
         print('Right out of range')
         error = (TRACKWIDTH / 2) - leftDist
-    elif (leftDist is None or leftDist > 20) and rightDist is not None:
+    elif (leftDist is None or leftDist > 20) and (rightDist is not None and rightDist < 20):
         print('Left out of range')
         error = rightDist - (TRACKWIDTH / 2)
-    elif leftDist is None and rightDist is None:
+    elif (leftDist is None or leftDist > 20) and (rightDist is None or rightDist > 20):
         print('Both out of range')
         error = 0
         return
     else:
         error = rightDist - leftDist
+        
+        
+    # print(error)
 
     correction = error * KP
     
@@ -80,12 +83,11 @@ def drive():
 
 def turnAtIntersection():
     global trackStart
-    global distFromTrackStart
+    global unitsFromTrackStart
+    global heading
     dist = frontUltra.getDist
     
     if dist is not None and dist < (TRACKWIDTH / 2) + 1:
-
-        countAsNewSqure = (get_position() - trackStart) % UNITSIZE > UNITSIZE / 2
 
         if leftUltra.getDist is not None and leftUltra.getDist < 20:
             direction = -1
@@ -96,15 +98,15 @@ def turnAtIntersection():
         turn_about_self(90 * direction)
         print('DONE TURNING')
 
-    if countAsNewSqure:
         update_map_walls()
-    trackStart = get_position()
-    distFromTrackStart = 0
+        trackStart = get_position()
+        unitsFromTrackStart = 0
+        
+        heading = (heading + (90 * direction)) % 360
+
 
 
 def turn_about_self(degrees):
-    heading = (heading + degrees) % 360
-
     motorL.set_default_speed(15)
     motorR.set_default_speed(15)
     
@@ -124,22 +126,30 @@ def turn_about_self(degrees):
 # ---------- Path Mapping ----------
 
 def check_new_square():
-    global currentPosition
-    if (get_position() - trackStart) / UNITSIZE > distFromTrackStart:
+    #print('--')
+    #print(get_position())
+    #print(trackStart)
+    #print(unitsFromTrackStart)
+    frontDist = frontUltra.getDist
+    if math.floor((get_position() - trackStart) / UNITSIZE) > unitsFromTrackStart and (frontDist is None or frontDist > UNITSIZE):
         update_map_walls()
     
 def update_map_walls():
-    distFromTrackStart += 1
-    currentPosition.x = currentPosition.x + math.cos(math.radians(heading))
-    currentPosition.y = currentPosition.y + math.sin(math.radians(heading))
-    currentPosition.type = 1
-    gridKnowledge.append(currentPosition)
+    global unitsFromTrackStart
+    print('new grid point')
+    unitsFromTrackStart += 1
+    currentPosition.x = currentPosition.x + int(math.cos(math.radians(heading)))
+    currentPosition.y = currentPosition.y + int(math.sin(math.radians(heading)))
+    currentPosition.typo = 1
+    print('current position', currentPosition.x, currentPosition.y)
+    gridKnowledge.append(copy.copy(currentPosition))
+    
 
     # calls to check for obstacles
     updateSourcesFieldOriented(currentPosition, heading)
 
 def get_position():
-    return ((motorL.get_position() + motorR.get_position()) / 2) * (math.pi * WHEELDIAMETER) / 360
+    return ((abs(motorL.get_position() - motorR.get_position())) / 2) * (math.pi * WHEELDIAMETER) / 360
 
 # ---------- Heat / Magnetic Detection -------------
 
@@ -267,3 +277,5 @@ except KeyboardInterrupt:
     motorL.stop()
     motorR.stop()
     print("\nCtrl+C detected. Exiting...")
+    for point in gridKnowledge:
+        print(point.x, point.y, point.typo)

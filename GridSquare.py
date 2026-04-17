@@ -10,8 +10,8 @@ class GridSquare:
     > 4 : end
     > 5 : origin
     '''
-    def __init__(x, y, type, value=-1):
+    def __init__(self, x, y, typo, value=-1):
         self.x = x
         self.y = y
-        self.type = type
+        self.typo = typo
         self.value = value
