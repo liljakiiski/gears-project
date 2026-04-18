@@ -13,6 +13,17 @@ from GridSquare import GridSquare
 import time
 import math
 import copy
+import csv
+
+# ---------- Inputs ----------
+
+ORIGIN = (0, 0) # starting point of robot on grid, given by instructional team
+START_HEADING = 90 # in degrees
+MAP = 2 # given by instructional team
+UNITLENGTHFOROUPUT = 30 # in cm, size of one square in the grid, given by instructional team
+UNITS = 'cm' # unit of measurement for above variable, given by instructional team
+NOTES = 'None'
+TEAM = 11
 
 # ---------- Variable and Device Setup ----------
 frontUltra = UltrasonicSensor(26)
@@ -26,14 +37,13 @@ motorL = Motor('A') #Left motor
 motorR = Motor('B') #Right motor
 
 # VARIABLES
-heading = 90 # 0 is facing east, 90 is facing north, 180 is facing west, 270 is facing south
-currentPosition = GridSquare(0, 0, 5) # initialize current position as origin
+heading = START_HEADING # 0 is facing east, 90 is facing north, 180 is facing west, 270 is facing south
+currentPosition = GridSquare(ORIGIN[0], ORIGIN[1], 5) # initialize current position as origin
 trackStart = 0 # in cm, reference for beginning of a straightaway
 unitsFromTrackStart = 0 # in coordinate units, distance traveled since trackStart
 gridKnowledge = [] # list of GridSquare objects, represents the map of the maze as the robot knows it
 
 # CONSTANTS
-TARGETDIST = 0 #in cm, dist from the 
 KP = 0.6
 SPEED = 20
 TRACKWIDTH = 20 #in cm, distance between walls, minus width of robot
@@ -41,6 +51,8 @@ UNITSIZE = 30 #in cm, size of one square in the grid
 WHEELDIAMETER = 4.7 # in cm, diameter of wheel
 
 # ---------- Calibration ----------
+
+gridKnowledge.append(currentPosition) # add origin to map
 
 try:
     TRACKWIDTH = rightUltra.getDist + leftUltra.getDist
@@ -52,6 +64,7 @@ except:
 def drive():
     rightDist = rightUltra.getDist
     leftDist = leftUltra.getDist
+    frontDist = frontUltra.getDist
     
     if (rightDist is None or rightDist > 20) and (leftDist is not None and leftDist < 20):
         print('Right out of range')
@@ -61,6 +74,11 @@ def drive():
         error = rightDist - (TRACKWIDTH / 2)
     elif (leftDist is None or leftDist > 20) and (rightDist is None or rightDist > 20):
         print('Both out of range')
+        if(frontDist is None or frontDist > 40):
+            # exited maze, stop driving
+            print('Exited maze, stopping')
+            end_procedure()
+            
         error = 0
         return
     else:
@@ -150,6 +168,15 @@ def update_map_walls():
 
 def get_position():
     return ((abs(motorL.get_position() - motorR.get_position())) / 2) * (math.pi * WHEELDIAMETER) / 360
+
+def end_procedure():
+    motorL.stop()
+    motorR.stop()
+    for point in gridKnowledge:
+        print(point.x, point.y, point.typo)
+
+    convertToCSV(gridKnowledge)
+    exit()
 
 # ---------- Heat / Magnetic Detection -------------
 
@@ -261,12 +288,42 @@ def detectHeatSource():
 
     return 'N'
 
+
+# ---------- CSV Conversion ----------
+
+def convertToCSV(gridKnowledge):
+
+    map = []
+    max_x = max(square.x for square in gridKnowledge if square.typo == 1)
+    max_y = max(square.y for square in gridKnowledge if square.typo == 1)
+
+    for i in range(max_y + 2):
+        map.append([])
+        for j in range(max_x + 2):
+            square = next((sq for sq in gridKnowledge if sq.x == j and sq.y == i), None)
+            if square:
+                map[i].append(square.typo)
+            else:
+                map[i].append(0)
+    
+    map.reverse() # invert map rows so up is increasing y
+
+    with open('team11_map.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Team: ', TEAM])
+        writer.writerow(['Map: ', MAP])
+        writer.writerow(['Unit Length: ', UNITLENGTHFOROUPUT])
+        writer.writerow(['Units: ', UNITS])
+        writer.writerow(['Origin: ', ORIGIN])
+        writer.writerow(['Notes: ', NOTES])
+        writer.writerows(map)
+
+
 # ---------- Main Code Loop ----------
 
 try:
     # SETUP
     trackStart = get_position()
-    gridKnowledge.append(GridSquare(0, 0, 5)) # add origin to map
     
     while True:
         drive()
@@ -274,8 +331,5 @@ try:
         check_new_square()
         time.sleep(0.1)
 except KeyboardInterrupt:
-    motorL.stop()
-    motorR.stop()
     print("\nCtrl+C detected. Exiting...")
-    for point in gridKnowledge:
-        print(point.x, point.y, point.typo)
+    end_procedure()
