@@ -19,8 +19,8 @@ import csv
 
 ORIGIN = (0, 0) # starting point of robot on grid, given by instructional team
 START_HEADING = 90 # in degrees
-MAP = 2 # given by instructional team
-UNITLENGTHFOROUPUT = 30 # in cm, size of one square in the grid, given by instructional team
+MAP = 1 # given by instructional team
+UNITLENGTHFOROUPUT = 40 # in cm, size of one square in the grid, given by instructional team
 UNITS = 'cm' # unit of measurement for above variable, given by instructional team
 NOTES = 'None'
 TEAM = 11
@@ -47,17 +47,21 @@ gridKnowledge = [] # list of GridSquare objects, represents the map of the maze 
 KP = 0.6
 SPEED = 20
 TRACKWIDTH = 20 #in cm, distance between walls, minus width of robot
-UNITSIZE = 30 #in cm, size of one square in the grid
+UNITSIZE = 35 #in cm, size of one square in the grid
 WHEELDIAMETER = 4.7 # in cm, diameter of wheel
 
 # ---------- Calibration ----------
 
-gridKnowledge.append(currentPosition) # add origin to map
+gridKnowledge.append(copy.copy(currentPosition)) # add origin to map
 
 try:
     TRACKWIDTH = rightUltra.getDist + leftUltra.getDist
+    print('Track width: ', TRACKWIDTH)
 except:
     print('Bad calibration')
+    
+    
+
 
 # ---------- Drive and Turn Functions for Wall Following ----------
 
@@ -66,13 +70,14 @@ def drive():
     leftDist = leftUltra.getDist
     frontDist = frontUltra.getDist
     
-    if (rightDist is None or rightDist > 20) and (leftDist is not None and leftDist < 20):
+    
+    if (rightDist is None or rightDist > 40) and (leftDist is not None and leftDist < 40):
         print('Right out of range')
         error = (TRACKWIDTH / 2) - leftDist
-    elif (leftDist is None or leftDist > 20) and (rightDist is not None and rightDist < 20):
+    elif (leftDist is None or leftDist > 40) and (rightDist is not None and rightDist < 40):
         print('Left out of range')
         error = rightDist - (TRACKWIDTH / 2)
-    elif (leftDist is None or leftDist > 20) and (rightDist is None or rightDist > 20):
+    elif (leftDist is None or leftDist > 40) and (rightDist is None or rightDist > 40):
         print('Both out of range')
         if(frontDist is None or frontDist > 40):
             # exited maze, stop driving
@@ -105,7 +110,9 @@ def turnAtIntersection():
     global heading
     dist = frontUltra.getDist
     
-    if dist is not None and dist < (TRACKWIDTH / 2) + 1:
+    if dist is not None and (dist < (TRACKWIDTH / 2) + 1 and dist > (TRACKWIDTH / 2) + 1):
+        
+        print('Front value:', dist)
 
         if leftUltra.getDist is not None and leftUltra.getDist < 20:
             direction = -1
@@ -134,12 +141,17 @@ def turn_about_self(degrees):
     # the motors overshoot slightly, since two motors are running this overshooting is multiplied twice
     # account for this overshooting by subtracting a (constant?) push value
     push_per_degree = -34 / 180
+    
 
     motorDegrees = (degrees + push_per_degree * degrees) * BOT_R / WHEEL_R
     print(motorDegrees)
 
     motorL.run_for_degrees(motorDegrees, blocking=False)
     motorR.run_for_degrees(motorDegrees)
+    
+    motorL.stop()
+    motorR.stop()
+
 
 # ---------- Path Mapping ----------
 
@@ -172,6 +184,7 @@ def get_position():
 def end_procedure():
     motorL.stop()
     motorR.stop()
+    gridKnowledge.append(GridSquare(currentPosition.x + int(math.cos(math.radians(heading))), currentPosition.y + int(math.sin(math.radians(heading))), 4))
     for point in gridKnowledge:
         print(point.x, point.y, point.typo)
 
@@ -275,7 +288,9 @@ Returns ROBOT ORIENTED detection of heat source
 > "F" : detected ahead
 '''
 def detectHeatSource():
-    MIN = 1000
+    MIN = 15
+    
+    print(irSensor.value1)
 
     if (irSensor.value1 > MIN and irSensor.value2 > MIN):
         return 'F'
@@ -310,12 +325,12 @@ def convertToCSV(gridKnowledge):
 
     with open('team11_map.csv', 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['Team: ', TEAM])
-        writer.writerow(['Map: ', MAP])
-        writer.writerow(['Unit Length: ', UNITLENGTHFOROUPUT])
-        writer.writerow(['Units: ', UNITS])
-        writer.writerow(['Origin: ', ORIGIN])
-        writer.writerow(['Notes: ', NOTES])
+        writer.writerow([f'Team: {TEAM}'])
+        writer.writerow([f'Map: {MAP}'])
+        writer.writerow([f'Unit Length: {UNITLENGTHFOROUPUT}'])
+        writer.writerow([f'Units: {UNITS}'])
+        writer.writerow([f'Origin: {ORIGIN}'])
+        writer.writerow([f'Notes: {NOTES}'])
         writer.writerows(map)
 
 
