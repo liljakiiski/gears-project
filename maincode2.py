@@ -35,6 +35,7 @@ imu = IMUSensor()
 
 motorL = Motor('A') #Left motor
 motorR = Motor('B') #Right motor
+dropMotor = Motor('C') # Drop motor
 
 # VARIABLES
 heading = START_HEADING # 0 is facing east, 90 is facing north, 180 is facing west, 270 is facing south
@@ -60,7 +61,6 @@ try:
 except:
     print('Bad calibration')
     
-    
 
 
 # ---------- Drive and Turn Functions for Wall Following ----------
@@ -70,7 +70,15 @@ def drive():
     leftDist = leftUltra.getDist
     frontDist = frontUltra.getDist
     
-    
+    if updateSourcesFieldOriented(currentPosition, heading):
+        print('Source detected. Reversing...')
+        distanceToReverse = (get_position() - trackStart) - (get_position() - trackStart) % UNITSIZE
+        degreesToReverse = (distanceToReverse / (math.pi * WHEELDIAMETER)) * 360
+        motorL.run_for_degrees(-degreesToReverse, blocking=False)
+        motorR.run_for_degrees(degreesToReverse, blocking=True)
+        print('Force turn')
+        turnAtIntersection(needToTurn=True)
+            
     if (rightDist is None or rightDist > 40) and (leftDist is not None and leftDist < 40):
         print('Right out of range')
         error = (TRACKWIDTH / 2) - leftDist
@@ -104,17 +112,17 @@ def drive():
     motorL.start(-SPEED - correction)
 
 
-def turnAtIntersection():
+def turnAtIntersection(needToTurn=False):
     global trackStart
     global unitsFromTrackStart
     global heading
     dist = frontUltra.getDist
     
-    if dist is not None and (dist < (TRACKWIDTH / 2) + 1 and dist > (TRACKWIDTH / 2) + 1):
+    if (dist is not None and (dist < (TRACKWIDTH / 2) + 1)) or needToTurn:
         
         print('Front value:', dist)
 
-        if leftUltra.getDist is not None and leftUltra.getDist < 20:
+        if (leftUltra.getDist is not None and leftUltra.getDist < 20) and (rightUltra.getDist is None or rightUltra.getDist > 20):
             direction = -1
             print('TURNING RIGHT')
         else:
@@ -128,7 +136,6 @@ def turnAtIntersection():
         unitsFromTrackStart = 0
         
         heading = (heading + (90 * direction)) % 360
-
 
 
 def turn_about_self(degrees):
@@ -173,15 +180,22 @@ def update_map_walls():
     currentPosition.typo = 1
     print('current position', currentPosition.x, currentPosition.y)
     gridKnowledge.append(copy.copy(currentPosition))
-    
-
-    # calls to check for obstacles
-    updateSourcesFieldOriented(currentPosition, heading)
 
 def get_position():
     return ((abs(motorL.get_position() - motorR.get_position())) / 2) * (math.pi * WHEELDIAMETER) / 360
 
-def end_procedure():
+def end_procedure(finished):
+    if finished:
+        motorL.stop()
+        motorR.stop()
+        motorL.run_for_degrees(-1000, blocking=False)
+        motorR.run_for_degrees(1000, blocking=True)
+        motorL.stop()
+        motorR.stop()
+        dropMotor.run_for_degrees(70, blocking=True)
+        motorL.run_for_degrees(-1000, blocking=False)
+        motorR.run_for_degrees(1000, blocking=True)
+        dropMotor.run_for_degrees(-70, blocking=True)
     motorL.stop()
     motorR.stop()
     gridKnowledge.append(GridSquare(currentPosition.x + int(math.cos(math.radians(heading))), currentPosition.y + int(math.sin(math.radians(heading))), 4))
@@ -189,6 +203,7 @@ def end_procedure():
         print(point.x, point.y, point.typo)
 
     convertToCSV(gridKnowledge)
+
     exit()
 
 # ---------- Heat / Magnetic Detection -------------
@@ -203,15 +218,21 @@ def updateSourcesFieldOriented(robotLoc, heading):
     heatSource = detectHeatSource()
 
     if(magSource != 'N'):
-        x_mag, y_mag, z_mag = imu.getMag()
         magSquare = getRobotOrientedLoc(robotLoc, heading, magSource)
-        gridKnowledge.append(magSquare)        
+        gridKnowledge.append(magSquare)    
+        return True    
 
     if(heatSource != 'N'):
         heatSquare = getRobotOrientedLoc(robotLoc, heading, heatSource)
         heatSquare.type = 2
         gridKnowledge.append(heatSquare)
+        return True
+    
+    return False
 
+'''
+Return robot oriented location
+'''
 def getRobotOrientedLoc(robotLoc, heading, dir):
     newLoc = copy.copy(robotLoc)
 
@@ -251,63 +272,41 @@ def getRobotOrientedLoc(robotLoc, heading, dir):
 
 '''
 Returns ROBOT ORIENTED detection of magentic source
-
 > "N" : none detected
-> "L" : detect left side
-> "R" : detected right side
 > "F" : detected ahead
 '''
 def detectMagSource():
-    MIN = 1000
+    MIN = 40
 
     '''
-    Accordint to image on IMU
-    -x : ahead
-    -y : left
-    +y : right
+    Accordint to testing
+    -x : ahead : look at magnitude of x (depends on polarity)
     '''
     x_mag, y_mag, z_mag = imu.getMag()
 
-    if (abs(x_mag) > MIN):
+    if (abs(x_mag) >= MIN):
         return 'F'
-    
-    elif (y_mag > MIN):
-        return 'L'
-
-    elif (y_mag < -MIN):
-        return 'R'
     
     return 'N'
 
 '''
 Returns ROBOT ORIENTED detection of heat source
-
 > "N" : none detected
-> "L" : detect left side
-> "R" : detected right side
 > "F" : detected ahead
 '''
 def detectHeatSource():
-    MIN = 15
+    MIN = 20
     
     print(irSensor.value1)
 
-    if (irSensor.value1 > MIN and irSensor.value2 > MIN):
+    if (irSensor.value1 >= MIN or irSensor.value2 >= MIN):
         return 'F'
-    
-    elif (irSensor.value1 > MIN):
-        return 'L'
-    
-    elif (irSensor.value2 > MIN):
-        return 'R'
 
     return 'N'
-
 
 # ---------- CSV Conversion ----------
 
 def convertToCSV(gridKnowledge):
-
     map = []
     max_x = max(square.x for square in gridKnowledge if square.typo == 1)
     max_y = max(square.y for square in gridKnowledge if square.typo == 1)
@@ -335,7 +334,7 @@ def convertToCSV(gridKnowledge):
 
 
 # ---------- Main Code Loop ----------
-
+ 
 try:
     # SETUP
     trackStart = get_position()
