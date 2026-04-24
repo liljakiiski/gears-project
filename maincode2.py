@@ -26,7 +26,7 @@ NOTES = 'None'
 TEAM = 11
 
 # ---------- Variable and Device Setup ----------
-frontUltra = UltrasonicSensor(26)
+frontUltra = UltrasonicSensor(16)
 rightUltra = UltrasonicSensor(18)
 leftUltra = UltrasonicSensor(24)
 
@@ -48,7 +48,7 @@ gridKnowledge = [] # list of GridSquare objects, represents the map of the maze 
 KP = 0.6
 SPEED = 20
 TRACKWIDTH = 20 #in cm, distance between walls, minus width of robot
-UNITSIZE = 35 #in cm, size of one square in the grid
+UNITSIZE = 30 #in cm, size of one square in the grid
 WHEELDIAMETER = 4.7 # in cm, diameter of wheel
 
 # ---------- Calibration ----------
@@ -70,12 +70,16 @@ def drive():
     leftDist = leftUltra.getDist
     frontDist = frontUltra.getDist
     
+    # print('Front: ', frontDist)
+    
     if updateSourcesFieldOriented(currentPosition, heading):
         print('Source detected. Reversing...')
-        distanceToReverse = (get_position() - trackStart) - (get_position() - trackStart) % UNITSIZE
+        distanceToReverse = (get_position() - trackStart) % UNITSIZE
+        print('Distance to reverse: ', distanceToReverse)
         degreesToReverse = (distanceToReverse / (math.pi * WHEELDIAMETER)) * 360
-        motorL.run_for_degrees(-degreesToReverse, blocking=False)
-        motorR.run_for_degrees(degreesToReverse, blocking=True)
+        print('Degrees to spin: ', degreesToReverse)
+        motorL.run_for_degrees(degreesToReverse, blocking=False)
+        motorR.run_for_degrees(-degreesToReverse, blocking=True)
         print('Force turn')
         turnAtIntersection(needToTurn=True)
             
@@ -90,7 +94,7 @@ def drive():
         if(frontDist is None or frontDist > 40):
             # exited maze, stop driving
             print('Exited maze, stopping')
-            end_procedure()
+            end_procedure(True)
             
         error = 0
         return
@@ -118,7 +122,7 @@ def turnAtIntersection(needToTurn=False):
     global heading
     dist = frontUltra.getDist
     
-    if (dist is not None and (dist < (TRACKWIDTH / 2) + 1)) or needToTurn:
+    if (dist is not None and (dist < (TRACKWIDTH / 2) + 1) and dist > (TRACKWIDTH / 2) - 2) or needToTurn:
         
         print('Front value:', dist)
 
@@ -188,13 +192,15 @@ def end_procedure(finished):
     if finished:
         motorL.stop()
         motorR.stop()
-        motorL.run_for_degrees(-1000, blocking=False)
-        motorR.run_for_degrees(1000, blocking=True)
+        motorL.set_default_speed(SPEED)
+        motorR.set_default_speed(SPEED)
+        motorL.run_for_degrees(-500, blocking=False)
+        motorR.run_for_degrees(500, blocking=True)
         motorL.stop()
         motorR.stop()
         dropMotor.run_for_degrees(70, blocking=True)
-        motorL.run_for_degrees(-1000, blocking=False)
-        motorR.run_for_degrees(1000, blocking=True)
+        motorL.run_for_degrees(-500, blocking=False)
+        motorR.run_for_degrees(500, blocking=True)
         dropMotor.run_for_degrees(-70, blocking=True)
     motorL.stop()
     motorR.stop()
@@ -218,14 +224,18 @@ def updateSourcesFieldOriented(robotLoc, heading):
     heatSource = detectHeatSource()
 
     if(magSource != 'N'):
+        print('Magnet Detected')
         magSquare = getRobotOrientedLoc(robotLoc, heading, magSource)
-        gridKnowledge.append(magSquare)    
+        magSquare.typo = 3
+        gridKnowledge.append(magSquare)
+        
         return True    
 
     if(heatSource != 'N'):
         heatSquare = getRobotOrientedLoc(robotLoc, heading, heatSource)
-        heatSquare.type = 2
+        heatSquare.typo = 2
         gridKnowledge.append(heatSquare)
+        print('Infared Detected')
         return True
     
     return False
@@ -233,39 +243,39 @@ def updateSourcesFieldOriented(robotLoc, heading):
 '''
 Return robot oriented location
 '''
-def getRobotOrientedLoc(robotLoc, heading, dir):
+def getRobotOrientedLoc(robotLoc, heading, dir_):
     newLoc = copy.copy(robotLoc)
 
     if (heading == 0):
-        if (dir == 'F'):
+        if (dir_ == 'F'):
             newLoc.x += 1
-        elif (dir == 'L'):
+        elif (dir_ == 'L'):
             newLoc.y += 1
-        elif (dir == 'R'):
+        elif (dir_ == 'R'):
             newLoc.y -= 1
         
     elif (heading == 90):
-        if (dir == 'F'):
+        if (dir_ == 'F'):
             newLoc.y += 1
-        elif (dir == 'L'):
+        elif (dir_ == 'L'):
             newLoc.x -= 1
-        elif (dir == 'R'):
+        elif (dir_ == 'R'):
             newLoc.x += 1
             
     elif (heading == 180):
-        if (dir == 'F'):
+        if (dir_ == 'F'):
             newLoc.x -= 1
-        elif (dir == 'L'):
+        elif (dir_ == 'L'):
             newLoc.y -= 1
-        elif (dir == 'R'):
+        elif (dir_ == 'R'):
             newLoc.y += 1
 
     elif (heading == 270):
-        if (dir == 'F'):
+        if (dir_ == 'F'):
             newLoc.y -= 1
-        elif (dir == 'L'):
+        elif (dir_ == 'L'):
             newLoc.x += 1
-        elif (dir == 'R'):
+        elif (dir_ == 'R'):
             newLoc.x -= 1
 
     return newLoc
@@ -276,7 +286,7 @@ Returns ROBOT ORIENTED detection of magentic source
 > "F" : detected ahead
 '''
 def detectMagSource():
-    MIN = 40
+    MIN = 300
 
     '''
     Accordint to testing
@@ -285,6 +295,7 @@ def detectMagSource():
     x_mag, y_mag, z_mag = imu.getMag()
 
     if (abs(x_mag) >= MIN):
+        print('X Magnetic Value:', x_mag)
         return 'F'
     
     return 'N'
@@ -295,9 +306,9 @@ Returns ROBOT ORIENTED detection of heat source
 > "F" : detected ahead
 '''
 def detectHeatSource():
-    MIN = 20
+    MIN = 200
     
-    print(irSensor.value1)
+    # print(irSensor.value1)
 
     if (irSensor.value1 >= MIN or irSensor.value2 >= MIN):
         return 'F'
@@ -346,4 +357,4 @@ try:
         time.sleep(0.1)
 except KeyboardInterrupt:
     print("\nCtrl+C detected. Exiting...")
-    end_procedure()
+    end_procedure(False)
