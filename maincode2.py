@@ -26,7 +26,7 @@ NOTES = 'None'
 TEAM = 11
 
 # ---------- Variable and Device Setup ----------
-frontUltra = UltrasonicSensor(16)
+frontUltra = UltrasonicSensor(5)
 rightUltra = UltrasonicSensor(18)
 leftUltra = UltrasonicSensor(24)
 
@@ -38,17 +38,20 @@ motorR = Motor('B') #Right motor
 dropMotor = Motor('C') # Drop motor
 
 # VARIABLES
+oldError = 0
 heading = START_HEADING # 0 is facing east, 90 is facing north, 180 is facing west, 270 is facing south
 currentPosition = GridSquare(ORIGIN[0], ORIGIN[1], 5) # initialize current position as origin
 trackStart = 0 # in cm, reference for beginning of a straightaway
 unitsFromTrackStart = 0 # in coordinate units, distance traveled since trackStart
 gridKnowledge = [] # list of GridSquare objects, represents the map of the maze as the robot knows it
+beginTurnPosition = -1 # position of robot when the wall disappears
 
 # CONSTANTS
-KP = 0.6
+KP = 0.1
+KD = 0.005
 SPEED = 20
 TRACKWIDTH = 20 #in cm, distance between walls, minus width of robot
-UNITSIZE = 30 #in cm, size of one square in the grid
+UNITSIZE = 33 #in cm, size of one square in the grid
 WHEELDIAMETER = 4.7 # in cm, diameter of wheel
 
 # ---------- Calibration ----------
@@ -66,6 +69,8 @@ except:
 # ---------- Drive and Turn Functions for Wall Following ----------
 
 def drive():
+    global beginTurnPosition
+    global oldError
     rightDist = rightUltra.getDist
     leftDist = leftUltra.getDist
     frontDist = frontUltra.getDist
@@ -81,17 +86,33 @@ def drive():
         motorL.run_for_degrees(degreesToReverse, blocking=False)
         motorR.run_for_degrees(-degreesToReverse, blocking=True)
         print('Force turn')
+        turnAtIntersection(needToTurn=True, countNewSquare=False)
+    
+    if not(beginTurnPosition == -1) and get_position() > beginTurnPosition + (UNITSIZE / 2) - 2.5:
+        # turn at intersection with a valid straightaway
+        print('Turn right at straight-right intersection')
         turnAtIntersection(needToTurn=True)
+        motorL.set_default_speed(SPEED)
+        motorR.set_default_speed(SPEED)
+        motorL.run_for_degrees(-500, blocking=False)
+        motorR.run_for_degrees(500, blocking=True)
+        print('Back in maze') 
+        beginTurnPosition = -1
             
     if (rightDist is None or rightDist > 40) and (leftDist is not None and leftDist < 40):
-        print('Right out of range')
-        error = (TRACKWIDTH / 2) - leftDist
+        # right wall gone
+        error = (TRACKWIDTH / 2) - leftDist - 1
+        if beginTurnPosition == -1 and (frontDist is None or frontDist > 40):
+            print('Straight-right intersection detected')
+            beginTurnPosition = get_position()
     elif (leftDist is None or leftDist > 40) and (rightDist is not None and rightDist < 40):
+        # left wall gone
         print('Left out of range')
         error = rightDist - (TRACKWIDTH / 2)
     elif (leftDist is None or leftDist > 40) and (rightDist is None or rightDist > 40):
+        # both walls gone
         print('Both out of range')
-        if(frontDist is None or frontDist > 40):
+        if(frontDist is None or frontDist > 35):
             # exited maze, stop driving
             print('Exited maze, stopping')
             end_procedure(True)
@@ -99,12 +120,16 @@ def drive():
         error = 0
         return
     else:
+        beginTurnPosition = -1
         error = rightDist - leftDist
         
         
     # print(error)
 
-    correction = error * KP
+    p_correction = error * KP
+    d_correction = KD * (error - oldError) / 0.05
+    
+    correction = p_correction + d_correction
     
     if(SPEED - correction < 0):
         correction = SPEED
@@ -116,26 +141,32 @@ def drive():
     motorL.start(-SPEED - correction)
 
 
-def turnAtIntersection(needToTurn=False):
+def turnAtIntersection(needToTurn=False, countNewSquare=True):
     global trackStart
     global unitsFromTrackStart
     global heading
     dist = frontUltra.getDist
+    leftDist = leftUltra.getDist
+    rightDist = rightUltra.getDist
     
-    if (dist is not None and (dist < (TRACKWIDTH / 2) + 1) and dist > (TRACKWIDTH / 2) - 2) or needToTurn:
+    if (dist is not None and dist < (TRACKWIDTH / 2) and dist > (TRACKWIDTH / 2) - 2) or needToTurn:
         
         print('Front value:', dist)
 
-        if (leftUltra.getDist is not None and leftUltra.getDist < 20) and (rightUltra.getDist is None or rightUltra.getDist > 20):
+        if rightDist is None or rightDist > 20:
             direction = -1
             print('TURNING RIGHT')
-        else:
+        elif (rightDist is not None and rightDist < 20) and (leftDist is None or leftDist > 20):
             direction = 1
             print('TURNING LEFT')
+        else:
+            direction = 2
+            print('TURNING AROUND')
         turn_about_self(90 * direction)
         print('DONE TURNING')
 
-        update_map_walls()
+        if(countNewSquare):
+            update_map_walls()
         trackStart = get_position()
         unitsFromTrackStart = 0
         
@@ -152,6 +183,10 @@ def turn_about_self(degrees):
     # the motors overshoot slightly, since two motors are running this overshooting is multiplied twice
     # account for this overshooting by subtracting a (constant?) push value
     push_per_degree = -34 / 180
+    
+    
+    if(degrees == 180):
+        push_per_degree /= 1.7
     
 
     motorDegrees = (degrees + push_per_degree * degrees) * BOT_R / WHEEL_R
@@ -172,7 +207,7 @@ def check_new_square():
     #print(trackStart)
     #print(unitsFromTrackStart)
     frontDist = frontUltra.getDist
-    if math.floor((get_position() - trackStart) / UNITSIZE) > unitsFromTrackStart and (frontDist is None or frontDist > UNITSIZE):
+    if math.floor((get_position() - trackStart) / UNITSIZE) > unitsFromTrackStart and (frontDist is None or frontDist > UNITSIZE) and beginTurnPosition == -1:
         update_map_walls()
     
 def update_map_walls():
@@ -198,10 +233,10 @@ def end_procedure(finished):
         motorR.run_for_degrees(500, blocking=True)
         motorL.stop()
         motorR.stop()
-        dropMotor.run_for_degrees(70, blocking=True)
+        dropMotor.run_for_degrees(90, blocking=True)
         motorL.run_for_degrees(-500, blocking=False)
         motorR.run_for_degrees(500, blocking=True)
-        dropMotor.run_for_degrees(-70, blocking=True)
+        dropMotor.run_for_degrees(-90, blocking=True)
     motorL.stop()
     motorR.stop()
     gridKnowledge.append(GridSquare(currentPosition.x + int(math.cos(math.radians(heading))), currentPosition.y + int(math.sin(math.radians(heading))), 4))
@@ -294,8 +329,8 @@ def detectMagSource():
     '''
     x_mag, y_mag, z_mag = imu.getMag()
 
-    if (abs(x_mag) >= MIN):
-        print('X Magnetic Value:', x_mag)
+    if (abs(z_mag) >= MIN):
+        print('Z Magnetic Value:', z_mag)
         return 'F'
     
     return 'N'
@@ -306,7 +341,7 @@ Returns ROBOT ORIENTED detection of heat source
 > "F" : detected ahead
 '''
 def detectHeatSource():
-    MIN = 200
+    MIN = 800
     
     # print(irSensor.value1)
 
@@ -354,7 +389,7 @@ try:
         drive()
         turnAtIntersection()
         check_new_square()
-        time.sleep(0.1)
+        time.sleep(0.05)
 except KeyboardInterrupt:
     print("\nCtrl+C detected. Exiting...")
     end_procedure(False)
